@@ -141,6 +141,7 @@ const SHAPE_TARGET = 320;           // desired shape population
 const MAX_PARTICLES = 1000;
 const BOT_COUNT = 11;
 const MAX_LEVEL = 45;
+const GRACE_TIME = 25;              // new-player safe window (seconds): no bot attacks, no damage
 const TICK = 1/60;
 
 // XP needed to reach the *next* level (index by current level).
@@ -395,6 +396,7 @@ class Tank{
     this.stroke = team==='player' ? '#0086ad' : '#c23b40';
     this.ai = !isPlayer ? { wanderA:Math.random()*TAU, wanderT:0 } : null;
     this.spawnGuard=1.4;
+    this.graceT=0;   // new-player safe period (set on the player in startGame)
     this._near=false;
   }
   get def(){ return CLASSES[this.cls]; }
@@ -459,7 +461,8 @@ class Tank{
 
   takeDamage(amount,fromX,fromY,kbStrength){
     if(this.dead||this.spawnGuard>0||amount<=0) return;
-    this.hp-=amount; this.flash=1; this.regenDelay=2.2;
+    if(this.isPlayer){ if(this.graceT>0) return; amount*=0.55; }  // safe period + the player is tankier than bots
+    this.hp-=amount; this.flash=1; this.regenDelay=this.isPlayer?1.1:2.2;
     if(fromX!==undefined){
       const a=Math.atan2(this.y-fromY,this.x-fromX);
       this.vx+=Math.cos(a)*(kbStrength||1.2);
@@ -471,13 +474,14 @@ class Tank{
   update(dt){
     if(this.dead) return;
     if(this.spawnGuard>0) this.spawnGuard-=dt;
+    if(this.graceT>0) this.graceT-=dt;
     const d=this.derived;
     this.x+=this.vx; this.y+=this.vy;
     this.vx*=0.86; this.vy*=0.86;
     const rr=this.radius();
     this.x=clamp(this.x,rr,WORLD-rr); this.y=clamp(this.y,rr,WORLD-rr);
     if(this.regenDelay>0) this.regenDelay-=dt;
-    else if(this.hp<this.maxHp) this.hp=Math.min(this.maxHp,this.hp+d.regen*dt);
+    else if(this.hp<this.maxHp) this.hp=Math.min(this.maxHp,this.hp+d.regen*(this.isPlayer?2.4:1)*dt);
     if(this.flash>0) this.flash-=dt*5;
     if(this.recoilOff>0) this.recoilOff=Math.max(0,this.recoilOff-40*dt);
     if(this.muzzle>0) this.muzzle-=dt*40;
@@ -521,6 +525,7 @@ function updateBotAI(bot, dt, G){
   let foe=null, foeD=1e18;
   for(const t of G.tanks){
     if(t===bot||t.dead||t.team===bot.team) continue;
+    if(t.isPlayer && t.graceT>0) continue;   // leave the new player alone during their safe period
     const dd=dist2(bot.x,bot.y,t.x,t.y);
     if(dd<foeD){ foeD=dd; foe=t; }
   }
@@ -704,6 +709,16 @@ function drawTankShape(c,t,scale){
   c.shadowBlur=0;
   c.lineWidth=3.5*scale; c.strokeStyle=t.stroke; c.stroke();
   c.restore();
+  // safe-period shield ring around the new player
+  if(t.isPlayer && t.graceT>0){
+    c.save();
+    const pulse=0.5+0.5*Math.sin(elapsed*5);
+    c.globalAlpha=0.5+0.35*pulse;
+    c.strokeStyle='#7fe3ff'; c.lineWidth=3*scale;
+    c.shadowColor='#7fe3ff'; c.shadowBlur=16;
+    c.beginPath(); c.arc(t.x,t.y,rr+9+pulse*3,0,TAU); c.stroke();
+    c.restore();
+  }
 }
 
 function drawBar(c,x,y,w,frac,color,h){
@@ -757,6 +772,7 @@ function startGame(){
   let nm=document.getElementById('nameInput').value.trim();
   if(!nm) nm='You';
   const p=new Tank('player',nm,true);
+  p.graceT=GRACE_TIME;   // safe onboarding window: bots ignore you and you can't be hurt
   p.onLevelUp=()=>{
     Audio2.level();
     if(p.level===15||p.level===30||p.level===45) queueEvolve();
@@ -1132,6 +1148,18 @@ function drawHUD(){
   ctx.fillText('Level '+p.level+' · '+p.def.name, VW/2, by+10);
   ctx.fillStyle='#cfe3f2'; ctx.font='800 22px Inter, system-ui, sans-serif';
   ctx.fillText('Score: '+Math.floor(p.score).toLocaleString(), VW/2, by-16);
+
+  // safe-period banner (top-center)
+  if(p.graceT>0){
+    const secs=Math.ceil(p.graceT);
+    ctx.textAlign='center';
+    ctx.font='800 20px Inter, system-ui, sans-serif';
+    const msg='🛡  SAFE — '+secs+'s   ·   farm shapes & level up';
+    const w=ctx.measureText(msg).width+44, bx=VW/2-w/2, byy=66;
+    ctx.fillStyle='rgba(20,32,44,0.82)'; rrect(ctx,bx,byy,w,40,12); ctx.fill();
+    ctx.strokeStyle='rgba(127,227,255,0.55)'; ctx.lineWidth=2; rrect(ctx,bx,byy,w,40,12); ctx.stroke();
+    ctx.fillStyle='#7fe3ff'; ctx.fillText(msg, VW/2, byy+26);
+  }
 
   drawStatPanel(p);
   drawLeaderboard(p);
