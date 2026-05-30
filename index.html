@@ -88,9 +88,11 @@
   </div>
   <div class="hs" id="titleHS"></div>
   <div class="controls">
-    <b>WASD / Arrows</b> move &nbsp;·&nbsp; <b>Mouse</b> aim &nbsp;·&nbsp; <b>Click / Space</b> shoot<br>
-    <b>1–8</b> upgrade stats &nbsp;·&nbsp; <b>P / Esc</b> pause &nbsp;·&nbsp; <b>M</b> mute
+    <b>WASD / Arrows</b> move &nbsp;·&nbsp; <b>Mouse</b> aim &nbsp;·&nbsp; <b>Hold Click / Space</b> shoot (faster the longer you hold)<br>
+    <b>1–8</b> upgrade stats &nbsp;·&nbsp; <b>P / Esc</b> pause &nbsp;·&nbsp; <b>M</b> mute<br>
+    <span style="opacity:.5">New players get a 25s safe start — bots leave you alone while you level up.</span>
   </div>
+  <div style="position:absolute;bottom:10px;right:14px;font:600 11px Inter,system-ui,sans-serif;color:#3a4a5a">v3 · safe-start build</div>
 </div>
 
 <!-- EVOLUTION -->
@@ -397,6 +399,8 @@ class Tank{
     this.ai = !isPlayer ? { wanderA:Math.random()*TAU, wanderT:0 } : null;
     this.spawnGuard=1.4;
     this.graceT=0;   // new-player safe period (set on the player in startGame)
+    this.fireHold=0; // how long fire has been held (player hold-to-fire-faster)
+    this.canHuntPlayer=false;
     this._near=false;
   }
   get def(){ return CLASSES[this.cls]; }
@@ -456,12 +460,21 @@ class Tank{
     this.recoilOff=6; this.muzzle=8;
     let minrx=Infinity; for(const b of def.barrels) minrx=Math.min(minrx,b.rx||1);
     this.cooldown=baseReload*minrx;
+    if(this.isPlayer){
+      // hold-to-fire-faster: sustained fire spins the rate up to ~2x
+      this.cooldown *= clamp(1 - this.fireHold*0.45, 0.5, 1);
+    } else {
+      this.cooldown *= 1.7;   // bots fire noticeably slower
+    }
     if(this.isPlayer || this._near) Audio2.shoot();
   }
 
   takeDamage(amount,fromX,fromY,kbStrength){
     if(this.dead||this.spawnGuard>0||amount<=0) return;
-    if(this.isPlayer){ if(this.graceT>0) return; amount*=0.55; }  // safe period + the player is tankier than bots
+    if(this.isPlayer){
+      if(this.graceT>0) return;                                   // safe period: no damage
+      amount *= clamp(0.30 + this.level*0.055, 0.30, 1);          // very tanky early, ramps to full by ~lvl 13
+    }
     this.hp-=amount; this.flash=1; this.regenDelay=this.isPlayer?1.1:2.2;
     if(fromX!==undefined){
       const a=Math.atan2(this.y-fromY,this.x-fromX);
@@ -525,7 +538,7 @@ function updateBotAI(bot, dt, G){
   let foe=null, foeD=1e18;
   for(const t of G.tanks){
     if(t===bot||t.dead||t.team===bot.team) continue;
-    if(t.isPlayer && t.graceT>0) continue;   // leave the new player alone during their safe period
+    if(t.isPlayer && (t.graceT>0 || !bot.canHuntPlayer)) continue;   // safe period + anti-dogpile cap
     const dd=dist2(bot.x,bot.y,t.x,t.y);
     if(dd<foeD){ foeD=dd; foe=t; }
   }
@@ -878,8 +891,16 @@ function update(dt){
     mouse.wx=cam.x+(mouse.x-VW/2)/cam.zoom;
     mouse.wy=cam.y+(mouse.y-VH/2)/cam.zoom;
     p.angle=Math.atan2(mouse.wy-p.y,mouse.wx-p.x);
-    if(mouse.down||keys['Space']) p.fire(dt,G.bullets);
+    if(mouse.down||keys['Space']){ p.fireHold+=dt; p.fire(dt,G.bullets); }
+    else p.fireHold=0;
   }
+
+  // anti-dogpile: cap how many bots may hunt the player at once (scales up with level)
+  const maxHunters = (p && !p.dead) ? clamp(1+Math.floor((p.level-1)/4), 1, BOT_COUNT) : 0;
+  if(p && !p.dead){
+    const ranked=G.bots.filter(b=>!b.dead).sort((a,b)=>dist2(a.x,a.y,p.x,p.y)-dist2(b.x,b.y,p.x,p.y));
+    ranked.forEach((b,i)=> b.canHuntPlayer = i<maxHunters);
+  } else { for(const b of G.bots) b.canHuntPlayer=false; }
 
   // bots
   for(const b of G.bots){
