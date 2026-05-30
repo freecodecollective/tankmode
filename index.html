@@ -90,9 +90,9 @@
   <div class="controls">
     <b>WASD / Arrows</b> move &nbsp;·&nbsp; <b>Mouse</b> aim &nbsp;·&nbsp; <b>Hold Click / Space</b> shoot (faster the longer you hold)<br>
     <b>1–8</b> upgrade stats &nbsp;·&nbsp; <b>P / Esc</b> pause &nbsp;·&nbsp; <b>M</b> mute<br>
-    <span style="opacity:.5">New players get a 25s safe start — bots leave you alone while you level up.</span>
+    <span style="opacity:.5">New players get a 2-minute safe start — bots leave you alone while you level up.</span>
   </div>
-  <div style="position:absolute;bottom:10px;right:14px;font:600 11px Inter,system-ui,sans-serif;color:#3a4a5a">v3 · safe-start build</div>
+  <div style="position:absolute;bottom:10px;right:14px;font:600 11px Inter,system-ui,sans-serif;color:#3a4a5a">v4 · 2-min safe start</div>
 </div>
 
 <!-- EVOLUTION -->
@@ -143,7 +143,7 @@ const SHAPE_TARGET = 320;           // desired shape population
 const MAX_PARTICLES = 1000;
 const BOT_COUNT = 11;
 const MAX_LEVEL = 45;
-const GRACE_TIME = 25;              // new-player safe window (seconds): no bot attacks, no damage
+const GRACE_TIME = 120;             // new-player safe window (seconds): no bot attacks, no damage
 const TICK = 1/60;
 
 // XP needed to reach the *next* level (index by current level).
@@ -1173,9 +1173,10 @@ function drawHUD(){
   // safe-period banner (top-center)
   if(p.graceT>0){
     const secs=Math.ceil(p.graceT);
+    const tstr = secs>=60 ? Math.floor(secs/60)+':'+String(secs%60).padStart(2,'0') : secs+'s';
     ctx.textAlign='center';
     ctx.font='800 20px Inter, system-ui, sans-serif';
-    const msg='🛡  SAFE — '+secs+'s   ·   farm shapes & level up';
+    const msg='🛡  SAFE — '+tstr+'   ·   farm shapes & level up';
     const w=ctx.measureText(msg).width+44, bx=VW/2-w/2, byy=66;
     ctx.fillStyle='rgba(20,32,44,0.82)'; rrect(ctx,bx,byy,w,40,12); ctx.fill();
     ctx.strokeStyle='rgba(127,227,255,0.55)'; ctx.lineWidth=2; rrect(ctx,bx,byy,w,40,12); ctx.stroke();
