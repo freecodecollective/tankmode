@@ -3,6 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <title>TANKMODE — Arena</title>
 <style>
   :root{
@@ -90,9 +93,9 @@
   <div class="controls">
     <b>WASD / Arrows</b> move &nbsp;·&nbsp; <b>Mouse</b> aim &nbsp;·&nbsp; <b>Hold Click / Space</b> shoot (faster the longer you hold)<br>
     <b>1–8</b> upgrade stats &nbsp;·&nbsp; <b>P / Esc</b> pause &nbsp;·&nbsp; <b>M</b> mute<br>
-    <span style="opacity:.5">New players get a 2-minute safe start — bots leave you alone while you level up.</span>
+    <span style="opacity:.5">2-min safe start + you one-shot enemies early; it gradually gets harder over the run.</span>
   </div>
-  <div style="position:absolute;bottom:10px;right:14px;font:600 11px Inter,system-ui,sans-serif;color:#3a4a5a">v4 · 2-min safe start</div>
+  <div style="position:absolute;bottom:10px;right:14px;font:600 11px Inter,system-ui,sans-serif;color:#3a4a5a">v5 · easy-start ramp</div>
 </div>
 
 <!-- EVOLUTION -->
@@ -144,6 +147,9 @@ const MAX_PARTICLES = 1000;
 const BOT_COUNT = 11;
 const MAX_LEVEL = 45;
 const GRACE_TIME = 120;             // new-player safe window (seconds): no bot attacks, no damage
+const DIFF_RAMP  = 360;             // seconds to reach full difficulty (eases in over the run)
+// 0 at spawn → 1 at full difficulty. Early on the player one-shots enemies and barely takes damage.
+function difficulty(){ return clamp(elapsed/DIFF_RAMP, 0, 1); }
 const TICK = 1/60;
 
 // XP needed to reach the *next* level (index by current level).
@@ -440,6 +446,8 @@ class Tank{
     if(this.cooldown>0) return;
     const d=this.derived, def=this.def;
     const baseReload=d.reload;
+    // power ramp: the player one-shots enemies early, easing down to normal as the run goes on
+    const pmul = this.isPlayer ? lerp(30, 1, difficulty()) : 1;
     const fired=[];
     for(const bar of def.barrels){
       const a=this.angle+(bar.angle||0)+(bar.spread?rand(-bar.spread,bar.spread):0);
@@ -448,8 +456,9 @@ class Tank{
       const px=this.x+Math.cos(a)*blen + Math.cos(a+Math.PI/2)*off;
       const py=this.y+Math.sin(a)*blen + Math.sin(a+Math.PI/2)*off;
       const speed=d.bSpeed*(bar.sx||1);
-      const dmg=d.bDmg*(bar.dx||1);
-      const pen=d.pen*(bar.dx||1);
+      const dmg=d.bDmg*(bar.dx||1)*pmul;
+      const pen=(d.pen*(bar.dx||1))+(this.isPlayer?pmul:0);   // early shots pierce through too
+
       const radius=clamp((bar.width||26)*0.18,3,16);
       fired.push(new Bullet(this,px,py,a,speed,dmg,pen,radius));
       this.vx-=Math.cos(a)*0.18*(bar.recoil||1);
@@ -472,8 +481,8 @@ class Tank{
   takeDamage(amount,fromX,fromY,kbStrength){
     if(this.dead||this.spawnGuard>0||amount<=0) return;
     if(this.isPlayer){
-      if(this.graceT>0) return;                                   // safe period: no damage
-      amount *= clamp(0.30 + this.level*0.055, 0.30, 1);          // very tanky early, ramps to full by ~lvl 13
+      if(this.graceT>0) return;                                   // safe period: no damage at all
+      amount *= clamp(0.12 + difficulty()*0.9, 0.12, 1);          // near-invincible right after grace, ramps to full
     }
     this.hp-=amount; this.flash=1; this.regenDelay=this.isPlayer?1.1:2.2;
     if(fromX!==undefined){
